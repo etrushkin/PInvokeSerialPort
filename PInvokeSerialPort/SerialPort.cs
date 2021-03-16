@@ -638,6 +638,7 @@ namespace PInvokeSerialPort
         }
 
         public event Action<byte> DataReceived;
+        public event Action<Exception> ReceiveError;
 
         /// <summary>
         ///     Override this to process received bytes.
@@ -685,6 +686,7 @@ namespace PInvokeSerialPort
         /// <param name="e">The exception which was thrown</param>
         protected virtual void OnRxException(Exception e)
         {
+            ReceiveError?.Invoke(e);
         }
 
         private void ReceiveThread()
