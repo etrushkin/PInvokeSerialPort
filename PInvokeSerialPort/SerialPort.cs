@@ -168,6 +168,15 @@ namespace PInvokeSerialPort
         public ASCII XonChar { get; set; } = ASCII.DC1;
 
         /// <summary>
+        ///     Specifies the value of the character used to signal an event.
+        /// </summary>
+        public ASCII EvtChar { get; set; } = ASCII.EOT;
+
+        /// <summary>
+        ///     Use EvtChar and DataReceived instead of ByteReceived;
+        /// </summary>
+        public bool EvtCharEnable { get; set; }
+        /// <summary>
         ///     True if online.
         /// </summary>
         public bool Online => _online && CheckOnline();
@@ -371,6 +380,7 @@ namespace PInvokeSerialPort
             portDcb.XonChar = (byte) XonChar;
             portDcb.XoffLim = (short) RxHighWater;
             portDcb.XonLim = (short) RxLowWater;
+            portDcb.EvtChar = (byte)EvtChar;
             if (RxQueue != 0 || TxQueue != 0)
                 if (!Win32Com.SetupComm(_hPort, (uint) RxQueue, (uint) TxQueue))
                     ThrowException("Bad queue settings");
@@ -697,7 +707,7 @@ namespace PInvokeSerialPort
                 while (true)
                 {
                     if (!Win32Com.SetCommMask(_hPort,
-                        Win32Com.EV_RXCHAR | Win32Com.EV_TXEMPTY | Win32Com.EV_CTS | Win32Com.EV_DSR
+                        (EvtCharEnable ? Win32Com.EV_RXFLAG : 0) | Win32Com.EV_RXCHAR | Win32Com.EV_TXEMPTY | Win32Com.EV_CTS | Win32Com.EV_DSR
                         | Win32Com.EV_BREAK | Win32Com.EV_RLSD | Win32Com.EV_RING | Win32Com.EV_ERR))
                         throw new CommPortException("IO Error [001]");
                     Marshal.WriteInt32(uMask, 0);
@@ -729,7 +739,7 @@ namespace PInvokeSerialPort
                         throw new CommPortException("IO Error [003]");
                     }
 
-                    if ((eventMask & Win32Com.EV_RXCHAR) != 0)
+                    if ((eventMask & Win32Com.EV_RXCHAR) != 0 || (eventMask & Win32Com.EV_RXFLAG) != 0)
                     {
                         uint gotbytes;
                         do
