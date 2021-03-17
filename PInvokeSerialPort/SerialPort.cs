@@ -170,7 +170,7 @@ namespace PInvokeSerialPort
         /// <summary>
         ///     Specifies the value of the character used to signal an event.
         /// </summary>
-        public ASCII EvtChar { get; set; } = ASCII.EOT;
+        public byte EvtChar { get; set; } = (byte)ASCII.EOT;
 
         /// <summary>
         ///     Use EvtChar and DataReceived instead of ByteReceived;
@@ -638,7 +638,8 @@ namespace PInvokeSerialPort
         }
 
         public event Action<byte> DataReceived;
-        public event Action<Exception> ReceiveError;
+        public event Action ReceiveByteError;
+        public event Action<Exception> ExceptionThrown;
 
         /// <summary>
         ///     Override this to process received bytes.
@@ -647,6 +648,11 @@ namespace PInvokeSerialPort
         protected void OnRxChar(byte ch)
         {
             DataReceived?.Invoke(ch);
+        }
+
+        protected void OnRxError()
+        {
+            ReceiveByteError?.Invoke();
         }
 
         /// <summary>
@@ -686,7 +692,7 @@ namespace PInvokeSerialPort
         /// <param name="e">The exception which was thrown</param>
         protected virtual void OnRxException(Exception e)
         {
-            ReceiveError?.Invoke(e);
+            ExceptionThrown?.Invoke(e);
         }
 
         private void ReceiveThread()
@@ -761,6 +767,11 @@ namespace PInvokeSerialPort
 
                             if (gotbytes == 1) OnRxChar(buf[0]);
                         } while (gotbytes > 0);
+                    }
+
+                    if((eventMask & Win32Com.EV_ERR) != 0)
+                    {
+                        OnRxError();
                     }
 
                     if ((eventMask & Win32Com.EV_TXEMPTY) != 0) OnTxDone();
