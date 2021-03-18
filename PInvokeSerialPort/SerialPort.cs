@@ -18,6 +18,8 @@ namespace PInvokeSerialPort
         private bool _auto;
         private bool _checkSends = true;
 
+        private const int _readByteTimeout = 500;
+
         private Handshake _handShake;
         private IntPtr _hPort;
         private bool _online;
@@ -756,8 +758,26 @@ namespace PInvokeSerialPort
                             {
                                 if (Marshal.GetLastWin32Error() == Win32Com.ERROR_IO_PENDING)
                                 {
-                                    Win32Com.CancelIo(_hPort);
-                                    gotbytes = 0;
+                                    if(sg.WaitOne(_readByteTimeout))
+                                    {
+                                        if (Win32Com.GetOverlappedResult(_hPort, unmanagedOv, out gotbytes, true))
+                                        {
+                                            if (gotbytes != 1)
+                                            {
+                                                throw new CommPortException($"Recieved {gotbytes} instead on one");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            throw new CommPortException("GetOverlappedResult Error");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        throw new CommPortException($"Reading byte timeout {_readByteTimeout}ms");
+                                        //Win32Com.CancelIo(_hPort);
+                                        //gotbytes = 0;
+                                    }
                                 }
                                 else
                                 {
@@ -807,7 +827,7 @@ namespace PInvokeSerialPort
             if (_rxException != null && !_rxExceptionReported)
             {
                 _rxExceptionReported = true;
-                ThrowException("rx");
+                ThrowException("Rx thread: " + _rxException);
             }
 
             if (_online)
