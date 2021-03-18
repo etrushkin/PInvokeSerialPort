@@ -31,6 +31,7 @@ namespace PInvokeSerialPort
         private int _stateDtr = 2;
         private int _stateRts = 2;
         private int _writeCount;
+        private readonly object _onlineLock = new object();
 
         #endregion
 
@@ -351,21 +352,25 @@ namespace PInvokeSerialPort
         /// <returns>false if the port could not be opened</returns>
         public bool Open()
         {
+            if (_online) return false;
+
             var portDcb = new DCB();
             var commTimeouts = new COMMTIMEOUTS();
             var wo = new OVERLAPPED();
 
-            if (_online) return false;
-
             _hPort = Win32Com.CreateFile(PortName, Win32Com.GENERIC_READ | Win32Com.GENERIC_WRITE, 0, IntPtr.Zero,
                 Win32Com.OPEN_EXISTING, Win32Com.FILE_FLAG_OVERLAPPED, IntPtr.Zero);
-            if (_hPort == (IntPtr) Win32Com.INVALID_HANDLE_VALUE)
+            lock(_onlineLock)
             {
-                if (Marshal.GetLastWin32Error() == Win32Com.ERROR_ACCESS_DENIED) return false;
-                throw new CommPortException("Port Open Failure");
+                if (_hPort == (IntPtr)Win32Com.INVALID_HANDLE_VALUE)
+                {
+                    if (Marshal.GetLastWin32Error() == Win32Com.ERROR_ACCESS_DENIED) return false;
+                    throw new CommPortException("Port Open Failure");
+                }
+
+                _online = true;
             }
 
-            _online = true;
 
             commTimeouts.ReadIntervalTimeout = 0;
             commTimeouts.ReadTotalTimeoutConstant = 0;
@@ -446,30 +451,36 @@ namespace PInvokeSerialPort
         /// </summary>
         public void Close()
         {
-            if (_online)
-            {
-                _auto = false;
-                BeforeClose(false);
-                InternalClose();
-                _rxException = null;
-            }
+            _auto = false;
+            InternalClose(false);
         }
 
-        private void InternalClose()
+        private void InternalClose(bool error)
         {
-            Win32Com.CancelIo(_hPort);
-            if (_rxThread != null)
+            lock (_onlineLock)
             {
-                _rxThread.Abort();
-                _rxThread = null;
-            }
+                if (_online)
+                {
+                    BeforeClose(error);
+                    Win32Com.CancelIo(_hPort);
+                    if (_rxThread != null)
+                    {
+                        _rxThread.Abort();
+                        _rxThread = null;
+                    }
 
-            Win32Com.CloseHandle(_hPort);
-            if (_ptrUwo != IntPtr.Zero) Marshal.FreeHGlobal(_ptrUwo);
-            _stateRts = 2;
-            _stateDtr = 2;
-            _stateBrk = 2;
-            _online = false;
+                    Win32Com.CloseHandle(_hPort);
+                    if (_ptrUwo != IntPtr.Zero) Marshal.FreeHGlobal(_ptrUwo);
+                    _stateRts = 2;
+                    _stateDtr = 2;
+                    _stateBrk = 2;
+                    _online = false;
+                    if (!error)
+                    {
+                        _rxException = null;
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -496,13 +507,8 @@ namespace PInvokeSerialPort
         /// <param name="reason">Description of fault</param>
         protected void ThrowException(string reason)
         {
+            InternalClose(true);
             if (Thread.CurrentThread == _rxThread) throw new CommPortException(reason);
-            if (_online)
-            {
-                BeforeClose(true);
-                InternalClose();
-            }
-
             if (_rxException == null) throw new CommPortException(reason);
             throw new CommPortException(_rxException);
         }
